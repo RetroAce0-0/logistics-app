@@ -1,6 +1,7 @@
 import io
 from datetime import date, datetime, timedelta
 
+from functools import wraps
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 from flask import Flask, Response, jsonify, request, render_template, flash, redirect, url_for
@@ -9,6 +10,21 @@ from sqlalchemy.exc import SQLAlchemyError
 from forms import DailyEntryForm
 
 app = Flask(__name__)
+
+# --- API Authentication Decorator ---
+def require_api_key(f):
+    """Decorator to protect API endpoints with a key."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Check for the API key in the request headers
+        api_key = request.headers.get('X-API-Key')
+        # Compare with the key stored in the app's config
+        if not api_key or api_key != app.config['INTERNAL_API_KEY']:
+            app.logger.warning(f"Unauthorized API access attempt from IP: {request.remote_addr}")
+            return jsonify({"error": "Unauthorized. Invalid or missing API key."}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
 
 # Load configuration from the config.py file
 app.config.from_object('config.Config')
@@ -173,6 +189,7 @@ def tracker():
     return render_template('tracker.html', contracts=contracts, today=date.today(), analytics_data=analytics_data)
 
 @app.route('/api/v1/operations', methods=['POST'])
+@require_api_key
 def create_operation():
     """
     API endpoint to create a new daily operation entry.
@@ -203,6 +220,7 @@ def create_operation():
         return jsonify({"error": "Failed to create operation.", "details": str(e)}), 500
 
 @app.route('/api/v1/export', methods=['GET'])
+@require_api_key
 def export_data():
     """
     API endpoint to export data as CSV.
