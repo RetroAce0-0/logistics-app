@@ -62,16 +62,49 @@ with st.form("daily_entry_form"):
 
     st.header("Contract Information")
     facilitator_name = st.text_input("Facilitator Name")
+    
+    lease_payment_status = st.selectbox("Lease Payment Status", ["", "Completed", "Outstanding"])
+
+    # --- Conditional Lease Details ---
+    lease_start_date = None
+    lease_end_date = None
+    lease_period_days = 0
+
+    if lease_payment_status == 'Outstanding':
+        st.subheader("Outstanding Lease Details")
+        col1, col2 = st.columns(2)
+        with col1:
+            lease_start_date = st.date_input("Lease Start Date", value=None)
+        with col2:
+            lease_end_date = st.date_input("Lease End Date", value=None)
+
+        if lease_start_date and lease_end_date:
+            if lease_end_date > lease_start_date:
+                lease_period_days = (lease_end_date - lease_start_date).days
+                st.info(f"Calculated Lease Period: **{lease_period_days} days**")
+            else:
+                st.error("Lease End Date must be after Lease Start Date.")
+
+    st.subheader("Lease Rates")
     col1, col2 = st.columns(2)
     with col1:
-        total_lease_rate = st.number_input("Total Lease Rate (Naira)", min_value=0.0, format="%.2f")
-        lease_start_date = st.date_input("Lease Start Date", value=None)
+        daily_commission_rate = st.number_input("Daily Commission Rate per Truck (Naira)", min_value=0.0, format="%.2f")
     with col2:
-        daily_commission_rate = st.number_input("Daily Commission Rate (Naira)", min_value=0.0, format="%.2f")
-        lease_end_date = st.date_input("Lease End Date", value=None)
-    
-    lease_payment_status = st.selectbox("Lease Payment Status", ["", "Outstanding", "Completed"])
+        # This remains the user's input for the total contract value
+        total_lease_rate = st.number_input("Total Lease Rate (Naira)", min_value=0.0, format="%.2f")
 
+    # --- Verification Logic ---
+    if lease_payment_status == 'Outstanding' and lease_period_days > 0 and daily_commission_rate > 0:
+        calculated_total_rate = daily_commission_rate * number_of_trucks * lease_period_days
+        st.markdown("---")
+        st.write("#### Rate Verification")
+        st.metric(
+            label=f"Calculated Total Lease (for {number_of_trucks} unit(s) over {lease_period_days} days)",
+            value=f"₦{calculated_total_rate:,.2f}"
+        )
+        st.write(f"The value above is calculated for your reference. The 'Total Lease Rate' you entered above will be saved.")
+        st.markdown("---")
+    
     st.header("Daily Metrics")
     col1, col2, col3 = st.columns(3)
     with col1:

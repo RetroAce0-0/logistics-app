@@ -30,20 +30,44 @@ try:
     if df.empty:
         st.warning("No contract data found. Please submit a daily entry first.")
     else:
-        # Get the most recent entry for each facilitator to represent the contract
-        contracts_df = df.sort_values('operation_date', ascending=False).drop_duplicates('facilitator_name')
+        # Get the most recent entry for each facilitator to represent the contract status
+        contracts_df = df.sort_values('operation_date', ascending=False).drop_duplicates('facilitator_name').copy()
         
-        # Calculate days remaining
+        # --- Calculations for Display ---
+        
+        # 1. Days Remaining / Outstanding
         contracts_df['lease_end_date'] = pd.to_datetime(contracts_df['lease_end_date']).dt.date
-        contracts_df['days_remaining'] = (contracts_df['lease_end_date'] - date.today()).dt.days
+        
+        def calculate_days_remaining(end_date):
+            if pd.notna(end_date):
+                return (end_date - date.today()).days
+            return None
+            
+        contracts_df['days_remaining'] = contracts_df['lease_end_date'].apply(calculate_days_remaining)
+
+        # 2. Outstanding Payment Status
+        contracts_df['Outstanding Payment?'] = contracts_df['lease_payment_status'].apply(
+            lambda x: 'Yes' if x == 'Outstanding' else 'No'
+        )
+
+        # 3. Breakdown Hours (from most recent entry)
+        contracts_df['breakdown_hours_last_report'] = contracts_df['hours_lost']
         
         # Select and rename columns for display
         display_df = contracts_df[[
             'facilitator_name', 'lease_start_date', 'lease_end_date', 
-            'days_remaining', 'total_lease_rate', 'lease_payment_status', 'site_location'
-        ]].rename(columns={'facilitator_name': 'Facilitator', 'lease_start_date': 'Start Date', 'lease_end_date': 'End Date', 'days_remaining': 'Days Remaining', 'total_lease_rate': 'Lease Rate (₦)', 'lease_payment_status': 'Status', 'site_location': 'Location'})
+            'days_remaining', 'lease_payment_status', 'Outstanding Payment?',
+            'total_lease_rate', 'breakdown_hours_last_report', 'site_location'
+        ]].rename(columns={
+            'facilitator_name': 'Facilitator', 'lease_start_date': 'Start Date', 
+            'lease_end_date': 'End Date', 'days_remaining': 'Lease Days Remaining/Outstanding', 
+            'lease_payment_status': 'Status', 'Outstanding Payment?': 'Payment Outstanding?',
+            'total_lease_rate': 'Lease Rate (₦)', 'breakdown_hours_last_report': 'Breakdown Hours (Last Report)',
+            'site_location': 'Location'
+        })
 
         st.dataframe(display_df)
+        st.info("💡 **Note:** 'Breakdown Hours' reflects the downtime reported on the most recent entry date for that contract, not the total for the entire lease period.")
 
 except Exception as e:
     st.error(f"Could not load tracker data. Please check the database connection. Error: {e}")
