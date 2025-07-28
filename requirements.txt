@@ -1,3 +1,4 @@
-streamlit
+functions-framework
+requests
 pandas
-openpyxl
+google-cloud-bigquery

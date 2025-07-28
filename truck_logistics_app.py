@@ -3,6 +3,7 @@ import pandas as pd
 import os
 from datetime import date
 import io
+import requests
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -11,24 +12,28 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- Data Storage Configuration ---
-DATA_FILE = "daily_truck_operations.csv"
+# --- API Configuration ---
+FLASK_API_URL = st.secrets.get("FLASK_API_URL", "http://127.0.0.1:5000")
+API_KEY = st.secrets.get("INTERNAL_API_KEY")
 
 # --- Helper Functions ---
 
-def load_data():
-    """Load data from CSV file. If file doesn't exist, create an empty DataFrame."""
-    if os.path.exists(DATA_FILE):
-        try:
-            return pd.read_csv(DATA_FILE)
-        except pd.errors.EmptyDataError:
-            # If the file is empty, return an empty DataFrame with correct columns
-            return pd.DataFrame(columns=["Date", "Truck ID", "Driver Name", "Origin", "Destination", "Cargo", "Status"])
-    else:
-        # If the file doesn't exist, create it with headers
-        df = pd.DataFrame(columns=["Date", "Truck ID", "Driver Name", "Origin", "Destination", "Cargo", "Status"])
-        df.to_csv(DATA_FILE, index=False)
-        return df
+def get_operations_data(period="monthly"):
+    """Fetch operations data from the Flask API."""
+    if not API_KEY:
+        st.error("Internal API Key is not configured in secrets.")
+        return pd.DataFrame()
+
+    headers = {'X-API-Key': API_KEY}
+    params = {'period': period}
+    try:
+        response = requests.get(f"{FLASK_API_URL}/api/v1/export", headers=headers, params=params)
+        response.raise_for_status() # Raises an exception for 4XX/5XX errors
+        # Use io.StringIO to read the CSV response text into a DataFrame
+        return pd.read_csv(io.StringIO(response.text))
+    except requests.exceptions.RequestException as e:
+        st.error(f"Failed to fetch data from API: {e}")
+        return pd.DataFrame()
 
 def to_excel(df: pd.DataFrame):
     """Converts a DataFrame to an Excel file in memory."""
@@ -38,77 +43,57 @@ def to_excel(df: pd.DataFrame):
     processed_data = output.getvalue()
     return processed_data
 
-# --- Securely Access API Key (Example) ---
-def get_api_service():
-    """
-    Placeholder function to demonstrate secure API key usage.
-    This function would initialize a client for a service like Google Maps or Google Sheets.
-    """
-    try:
-        # This is the secure way to access your key from secrets.toml
-        api_key = st.secrets["google_api"]["key"]
-        
-        # Here you would initialize your service, e.g., googlemaps.Client(key=api_key)
-        # For this example, we'll just return a success message.
-        st.sidebar.success("API Key loaded successfully!")
-        # return initialized_service_client
-    except KeyError:
-        st.sidebar.error("API Key not found. Please add it to your .streamlit/secrets.toml file.")
-        return None
-
 # --- Main Application UI ---
 
 st.title("🚚 Daily Truck Logistics Operations")
 st.markdown("---")
 
-# Initialize API Service (demonstration)
-get_api_service()
-
-# Load existing data
-df = load_data()
+if not API_KEY or FLASK_API_URL == "http://127.0.0.1:5000":
+    st.warning("API Key or URL not set for production. Please check your secrets.toml file.")
 
 # --- Input Form for New Entry ---
 st.header("Add New Operation")
 with st.form("new_operation_form", clear_on_submit=True):
-    # Use columns for a cleaner layout
-    col1, col2 = st.columns(2)
-    with col1:
-        operation_date = st.date_input("Date", value=date.today())
-        truck_id = st.text_input("Truck ID", placeholder="e.g., TRUCK-001")
-        driver_name = st.text_input("Driver Name", placeholder="e.g., John Doe")
-        status = st.selectbox("Status", ["Scheduled", "In Transit", "Delivered", "Delayed"], index=0)
-    with col2:
-        origin = st.text_input("Origin", placeholder="e.g., New York, NY")
-        destination = st.text_input("Destination", placeholder="e.g., Los Angeles, CA")
-        cargo = st.text_area("Cargo Description", placeholder="e.g., 20 pallets of electronics")
+    # These fields should match the DailyOperation model in your Flask app
+    operation_date = st.date_input("Operation Date", value=date.today())
+    truck_type = st.text_input("Truck Type", placeholder="e.g., Tipper")
+    equipment_make = st.text_input("Equipment Make", placeholder="e.g., Scania")
+    site_location = st.text_input("Site Location", placeholder="e.g., Main Quarry")
+    trips_covered = st.number_input("Trips Covered", min_value=0, step=1)
 
     submitted = st.form_submit_button("Add Operation Log")
 
 if submitted:
-    if not all([truck_id, driver_name, origin, destination, cargo]):
-        st.warning("Please fill out all fields before submitting.")
+    if not all([truck_type, equipment_make, site_location]):
+        st.warning("Please fill out all required fields.")
     else:
-        new_entry = pd.DataFrame([{
-            "Date": operation_date.strftime("%Y-%m-%d"),
-            "Truck ID": truck_id,
-            "Driver Name": driver_name,
-            "Origin": origin,
-            "Destination": destination,
-            "Cargo": cargo,
-            "Status": status
-        }])
-        
-        # Append new entry to the existing data
-        updated_df = pd.concat([df, new_entry], ignore_index=True)
-        updated_df.to_csv(DATA_FILE, index=False)
-        st.success("✅ Operation logged successfully!")
-        # Rerun to show the updated table immediately
-        st.experimental_rerun()
+        # Prepare data payload for the API
+        payload = {
+            "operation_date": operation_date.strftime("%Y-%m-%d"),
+            "truck_type": truck_type,
+            "equipment_make": equipment_make,
+            "site_location": site_location,
+            "trips_covered": trips_covered,
+            # Add other fields from your DailyOperation model as needed
+            "number_of_trucks": 1, # Example default
+        }
+        headers = {'X-API-Key': API_KEY, 'Content-Type': 'application/json'}
+        try:
+            response = requests.post(f"{FLASK_API_URL}/api/v1/operations", headers=headers, json=payload)
+            response.raise_for_status()
+            st.success(f"✅ Operation logged successfully! (ID: {response.json().get('id')})")
+        except requests.exceptions.RequestException as e:
+            st.error(f"Failed to submit data to API: {e}")
+            if e.response:
+                st.error(f"API Response: {e.response.text}")
 
 st.markdown("---")
 
 # --- Display Data and Download Option ---
 st.header("Operations Log")
+
+# Load existing data from the API
+df = get_operations_data(period="monthly")
 
 if not df.empty:
     st.dataframe(df, use_container_width=True)
