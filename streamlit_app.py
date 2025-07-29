@@ -76,7 +76,21 @@ with st.form("daily_entry_form"):
         with col1:
             lease_start_date = st.date_input("Lease Start Date", value=None)
         with col2:
-            lease_end_date = st.date_input("Lease End Date", value=None)
+            lease_end_date = st.date_input("Lease End Date", value=None)import streamlit as st
+            import time
+            
+            # This function's result is cached
+            @st.cache_data
+            def get_long_running_data():
+                # If you change this message, the app won't update
+                # because the function is cached and won't be re-executed.
+                message = "This is the original message from a slow function."
+                time.sleep(3) # Simulates a slow data fetch
+                return message
+            
+            st.write("Fetching data...")
+            st.write(get_long_running_data())
+            
 
         if lease_start_date and lease_end_date:
             if lease_end_date > lease_start_date:
